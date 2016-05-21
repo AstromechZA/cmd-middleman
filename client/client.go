@@ -11,7 +11,7 @@ import (
 )
 
 const usageString =
-`This rpc-cmd-client is the client side of an RPC system for executing command
+`rpc-cmd-client is the client side of an RPC system for executing commands
 across a unix domain socket. This can be used for escalating priviledges of the
 caller for specific commands or calling commands outside of a Docker container.
 
@@ -20,6 +20,13 @@ escalation, but is certainly better than some alternatives.
 
 The exit code will be 120 if an error regarding the local client occurs. Any
 other exit codes will be those of the RPC call.
+
+Arguments will be passed through to the server side for execution. For example:
+$ rpc-cmd-client --socket /tmp/s.sock ls -al
+Will execute 'ls' with arguments '-al' on the server side.
+
+If the command being executed does not match a whitelist pattern on the server,
+it will exit with code 127 'Command not found.'.
 `
 
 const rpcCall = "MiddleManRPC.RunCmd"

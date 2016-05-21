@@ -1,6 +1,7 @@
 package main
 
 import (
+    "bytes"
     "flag"
     "fmt"
     "io/ioutil"
@@ -12,7 +13,6 @@ import (
     "os/signal"
     "regexp"
     "strings"
-    "bytes"
     "syscall"
 
     "github.com/AstromechZA/middleman/transport"
@@ -20,8 +20,16 @@ import (
 )
 
 const usageString =
-`Middleman is a socket based RPC server and client for executing a set of
-whitelisted commands on the other end of a unix file socket.
+`rpc-cmd-server is the server side of an RPC system for executing commands
+across a unix domain socket. This can be used for escalating priviledges of the
+caller for specific commands or calling commands outside of a Docker container.
+
+This has a high chance of being used maliciously if it results in privilege
+escalation, but is certainly better than some alternatives.
+
+To protect against running any old command this application requires a file
+containing a number of regex patterns for whitelisted commands. At least one
+of these patterns MUST match a command and its arguments in order to be executed.
 `
 
 // MiddleManRPC is an rpc identifier whose only attribute is a list of
