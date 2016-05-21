@@ -84,21 +84,21 @@ This is still a pretty bad idea to run unless you have VERY specific use cases.
 
 1. create a directory for the socket file/s
 
-```
-$ mkdir /home/user/sockets
-```
+    ```
+    $ mkdir /home/user/sockets
+    ```
 
 2. start the server
 
-```
-$ ./rpc-cmd-server --socket /home/user/sockets/cmd-rpc.sock --whitelist /home/user/my-cmd-rpc-whitelist
-...
-```
+    ```
+    $ ./rpc-cmd-server --socket /home/user/sockets/cmd-rpc.sock --whitelist /home/user/my-cmd-rpc-whitelist
+    ...
+    ```
 
 3. start the docker container with the socket mounted inside
 
-```
-$ docker run --rm -ti -v /home/user/sockets:/sockets example-container /rpc-cmd-client --socket /sockets/cmd-rpc.sock touch /home/user/markerfile
-```
+    ```
+    $ docker run --rm -ti -v /home/user/sockets:/sockets example-container /rpc-cmd-client --socket /sockets/cmd-rpc.sock touch /home/user/markerfile
+    ```
 
 This should result in the file `/home/user/markerfile` being created.
