@@ -102,3 +102,15 @@ This is still a pretty bad idea to run unless you have VERY specific use cases.
     ```
 
 This should result in the file `/home/user/markerfile` being created.
+
+## Building the binaries
+
+These will probably only work for unix systems, don't even try it on Windows.
+
+```
+$ go build -o rpc-cmd-client github.com/AstromechZA/middleman/client
+$ go build -o rpc-cmd-server github.com/AstromechZA/middleman/server
+```
+
+Unfortunately the golang 'rpc' library used is fairly huge when statically
+compiled, so the resulting binaries will be on the order of 9MB each.
