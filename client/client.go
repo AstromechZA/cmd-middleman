@@ -1,64 +1,92 @@
 package main
 
 import (
-    "log"
-    "net/rpc"
-    "os"
     "flag"
     "fmt"
+    "net/rpc"
+    "os"
 
     "github.com/AstromechZA/middleman/transport"
+    "github.com/AstromechZA/middleman/common"
 )
 
-func main_inner() error {
+const usageString =
+`This rpc-cmd-client is the client side of an RPC system for executing command
+across a unix domain socket. This can be used for escalating priviledges of the
+caller for specific commands or calling commands outside of a Docker container.
+
+This has a high chance of being used maliciously if it results in privilege
+escalation, but is certainly better than some alternatives.
+
+The exit code will be 120 if an error regarding the local client occurs. Any
+other exit codes will be those of the RPC call.
+`
+
+const rpcCall = "MiddleManRPC.RunCmd"
+
+func mainInner() error {
+    // command line flags
     socketFileFlag := flag.String("socket", "", "Path to a unix socket file being listened to by the server.")
 
+    // set up the usage strings
+    flag.Usage = func() {
+        fmt.Println(usageString)
+        flag.PrintDefaults()
+    }
+
+    // parse the args
     flag.Parse()
 
-    // whitelist is required
-    if *socketFileFlag == "" {
-        return fmt.Errorf("Required --socket arg")
-    }
-    // make sure it exists as a file on the system
-    if _, err := os.Stat(*socketFileFlag); os.IsNotExist(err) {
-        return err
+    // required args
+    if err := common.RequiredFlag("socket"); err != nil {
+        return common.UsageError(usageString, err)
     }
 
-    if len(flag.Args()) == 0 {
-        return fmt.Errorf("Required at least one cmd argument")
+    // security checks on the file
+    st, err := os.Stat(*socketFileFlag)
+    // make sure it exists on the system
+    if os.IsNotExist(err) { return err }
+    // make sure it is a unix socket
+    if (st.Mode() & os.ModeSocket) != os.ModeSocket {
+        return fmt.Errorf("Socket file is not a unix socket")
+    }
+    // make sure its permissions are 0o600
+    if (st.Mode() & 0777) != 0600 {
+        return fmt.Errorf("Expected socket file permissions to be 0600")
     }
 
-    cmd0 := flag.Args()[0]
-    cmd1 := flag.Args()[1:]
+    // now we parse the remaining arguments as the actual command
+    if flag.NArg() == 0 {
+        return common.UsageError(usageString, fmt.Errorf("Required at least one argument"))
+    }
+    // the first one is the program
+    rpcProgram := flag.Args()[0]
+    // the rest are any args for it
+    rpcArgs := flag.Args()[1:]
 
-    log.Println("client starting")
+    // now lets connect to this socket file
     client, err := rpc.Dial("unix", *socketFileFlag)
     if err != nil { return err }
-    log.Println("connection established")
 
-    args := &transport.CmdArgs{Cmd: cmd0, Args: cmd1}
-    //args := &transport.CmdArgs{Cmd: "ls", Args: []string{"-al", "/"}}
+    args := &transport.CmdArgs{Cmd: rpcProgram, Args: rpcArgs}
     reply := &transport.CmdResult{ReturnCode: -1}
-    err = client.Call("MiddleManRPC.RunCmd", args, reply)
-    if err != nil {
-        log.Fatal(err)
-    }
-    log.Println(reply)
+    if err = client.Call(rpcCall, args, reply); err != nil { return err }
+    if err = client.Close(); err != nil { return err }
 
-    log.Println("calling client.Close()")
-    if err := client.Close(); err != nil {
-        log.Println("client.Close() error: ", err)
-    }
+    // print the combined output
+    fmt.Print(reply.Output)
+    // exit with the return code
+    os.Exit(reply.ReturnCode)
 
-    log.Println("client exiting")
-
+    // no error
     return nil
 }
 
 func main() {
-    err := main_inner()
-    if err != nil {
+    if err := mainInner(); err != nil {
         os.Stderr.WriteString(err.Error() + "\n")
-        os.Exit(1)
+        // we use exit 120 here because exit 1 would make it too confusing as
+        // to which program failed: remote or local.
+        os.Exit(120)
     }
 }

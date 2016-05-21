@@ -1,117 +1,182 @@
 package main
 
 import (
-    "log"
-    "os/exec"
-    "os"
-    "net"
-    "net/rpc"
     "flag"
-    "strings"
-    "regexp"
     "fmt"
     "io/ioutil"
+    "log"
+    "net"
+    "net/rpc"
+    "os"
+    "os/exec"
+    "os/signal"
+    "regexp"
+    "strings"
+    "bytes"
+    "syscall"
 
     "github.com/AstromechZA/middleman/transport"
+    "github.com/AstromechZA/middleman/common"
 )
 
 const usageString =
 `Middleman is a socket based RPC server and client for executing a set of
 whitelisted commands on the other end of a unix file socket.
-
 `
 
+// MiddleManRPC is an rpc identifier whose only attribute is a list of
+// whitelisting regex patterns.
 type MiddleManRPC struct {
-    whitelistPatterns []string
+    whitelistPatterns []regexp.Regexp
 }
 
-func (self *MiddleManRPC) RunCmd(args *transport.CmdArgs, reply *transport.CmdResult) error {
-    log.Printf("RunCmd being called with (%v %v)!", args.Cmd, args.Args)
+// RunCmd call allows an rpc call to execute a process on this host
+func (s *MiddleManRPC) RunCmd(args *transport.CmdArgs, reply *transport.CmdResult) error {
+    log.Printf("RunCmd being called with '%v %v'", args.Cmd, args.Args)
 
-    line := args.Cmd + " " + strings.Join(args.Args, " ")
+    line := strings.TrimSpace(args.Cmd + " " + strings.Join(args.Args, " "))
     allowed := false
-    for _, p := range self.whitelistPatterns {
-        m, err := regexp.MatchString(p, line)
-        if err != nil {
-            log.Printf("Rexexp failed: %v", err.Error())
-        }
-        if m {
+    for i, p := range s.whitelistPatterns {
+        lineBytes := []byte(line)
+        result := p.Find(lineBytes)
+        if result != nil && bytes.Equal(result, lineBytes) {
+            log.Printf("Command matched pattern %v: '%v'", i, p.String())
             allowed = true
+            break
         }
     }
 
     if allowed == false {
+        log.Printf("Command did not match any of the whitelist patterns")
         reply.ReturnCode = 127
         reply.Output = "Command not found."
         return nil
     }
 
+    log.Printf("Executing command '%v %v'", args.Cmd, args.Args)
     cmd := exec.Command(args.Cmd, args.Args...)
+    // we could possibly change this to separate out stdout and stderr
     out, err := cmd.CombinedOutput()
-    if err != nil {
-        reply.ReturnCode = 1
-    } else {
+    if err == nil {
+        reply.Output = string(out)
         reply.ReturnCode = 0
+    } else {
+        reply.ReturnCode = 1
+        if ee, ok := err.(*exec.ExitError); ok {
+            reply.Output = string(out)
+            if ws, ok := ee.Sys().(syscall.WaitStatus); ok {
+                reply.ReturnCode = ws.ExitStatus()
+            }
+        } else {
+            reply.Output = err.Error()
+        }
     }
-    reply.Output = string(out)
+    log.Printf("Result was %d bytes of output with return code %d", len(out), reply.ReturnCode)
     return nil
 }
 
+func compilePatternsFromFile(path string) (*[]regexp.Regexp, error) {
+    content, err := ioutil.ReadFile(path)
+    if err != nil { return nil, err }
+    whitelistPatterns := strings.Split(strings.TrimSpace(string(content)), "\n")
+    whitelistRegexes := make([]regexp.Regexp, len(whitelistPatterns))
+    for i, p := range whitelistPatterns {
+        r, err := regexp.Compile(p)
+        if err != nil { return nil, err }
+        whitelistRegexes[i] = *r
+    }
+    return &whitelistRegexes, nil
+}
 
-func main_inner() error {
-    whitelistFlag := flag.String("whitelist", "", "Path to a file containing regex patterns. A regex pattern MUST match an incoming command for it to be run.")
+func mainInner() error {
+    // command line flags
+    whitelistFlag := flag.String("whitelist", "",
+        "Path to a file containing regex patterns. A regex pattern MUST match an incoming command for it to be run.")
+    socketFileFlag := flag.String("socket", "",
+        "Path to a unix socket file being listened to by the server.")
 
+    // usage string
     flag.Usage = func() {
         os.Stderr.WriteString(usageString)
         flag.PrintDefaults()
     }
 
+    // parse the args
     flag.Parse()
 
-    // whitelist is required
-    if *whitelistFlag == "" {
-        return fmt.Errorf("Required --whitelist arg")
-    }
-
-    // extract patterns
-    var whitelistPatterns []string
-    {
-        content, err := ioutil.ReadFile(*whitelistFlag)
-        if err != nil { return err }
-        whitelistPatterns = strings.Split(strings.TrimSpace(string(content)), "\n")
-    }
-
-    log.Println("server starting")
-    socketPath := "/tmp/middleman.sock"
-    os.Remove(socketPath)
-
-    r := &MiddleManRPC{whitelistPatterns: whitelistPatterns}
-    err := rpc.Register(r)
-    if err != nil {
-        log.Fatal(err)
-        os.Exit(1)
-    }
-    addr := &net.UnixAddr{Net: "unix", Name: socketPath}
-    listener, err := net.ListenUnix("unix", addr)
-    if err != nil {
-        log.Fatal(err)
-        os.Exit(1)
-    }
-    for {
-        conn, err := listener.AcceptUnix()
-        log.Printf("Got connection %v", conn)
-        if err != nil {
-            log.Fatal(err)
+    // required args
+    for _, n := range []string{"whitelist", "socket"} {
+        if err := common.RequiredFlag(n); err != nil {
+            return common.UsageError(usageString, err)
         }
-        rpc.ServeConn(conn)
     }
+
+    // extract and compile patterns
+    whitelistPatterns, err := compilePatternsFromFile(*whitelistFlag)
+    if err != nil { return err }
+
+    // validate socket things
+    log.Printf("Checking socket file %v", *socketFileFlag)
+    st, err := os.Stat(*socketFileFlag)
+    // we dont really care if it doesn't exit
+    // we want to find out whether we can safely delete it
+    if os.IsNotExist(err) == false {
+        // make sure it is a unix socket
+        if (st.Mode() & os.ModeSocket) != os.ModeSocket {
+            return fmt.Errorf("Socket file %v exists but is not a unix socket. Please delete it for me.")
+        }
+        // otherwise we can delete it
+        log.Printf("Deleting old socket file %v", *socketFileFlag)
+        if err := os.Remove(*socketFileFlag); err != nil {
+            return err
+        }
+    }
+
+    // now register rpc interface object
+    log.Println("Registering RPC interface")
+    r := &MiddleManRPC{whitelistPatterns: *whitelistPatterns}
+    if err := rpc.Register(r); err != nil { return err }
+
+    // build socket address
+    addr := &net.UnixAddr{Net: "unix", Name: *socketFileFlag}
+    // listen
+    log.Printf("Listening on socket %v", addr)
+    listener, err := net.ListenUnix("unix", addr)
+    if err != nil { return err }
+    // chmod it to 0600
+    log.Println("Chmodding socket file to 0600")
+    if err := os.Chmod(*socketFileFlag, 0600); err != nil { return err }
+    // make sure we remove it at the end
+    defer os.Remove(*socketFileFlag)
+
+    stopped := false
+    log.Println("Beginning connection loop..")
+    go func() {
+        for stopped == false {
+            conn, err := listener.AcceptUnix()
+            if err != nil {
+                log.Fatal(err)
+            }
+            rpc.ServeConn(conn)
+        }
+    }()
+
+    // instead of sitting in a for loop or something, we wait for sigint
+    signalChannel := make(chan os.Signal, 1)
+    // notify that we are going to handle interrupts
+    signal.Notify(signalChannel, os.Interrupt)
+    for sig := range signalChannel {
+        log.Printf("Received %v signal. Stopping.", sig)
+        stopped = true
+        if err := listener.Close(); err != nil { return err }
+        return nil
+    }
+    return nil
 }
 
-
 func main() {
-    err := main_inner()
-    if err != nil {
-        log.Fatal(err)
+    if err := mainInner(); err != nil {
+        os.Stderr.WriteString(err.Error() + "\n")
         os.Exit(1)
     }
 }
