@@ -15,8 +15,8 @@ import (
     "strings"
     "syscall"
 
-    "github.com/AstromechZA/middleman/transport"
-    "github.com/AstromechZA/middleman/common"
+    "github.com/AstromechZA/cmd-middleman/transport"
+    "github.com/AstromechZA/cmd-middleman/common"
 )
 
 const usageString =

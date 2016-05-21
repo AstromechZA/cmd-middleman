@@ -15,8 +15,8 @@ function buildbinary {
     export GOOS=$goos
     export GOARCH=$goarch
 
-    go build -i -v -o "$outputfolder/rpc-cmd-client" github.com/AstromechZA/middleman/client
-    go build -i -v -o "$outputfolder/rpc-cmd-server" github.com/AstromechZA/middleman/server
+    go build -i -v -o "$outputfolder/rpc-cmd-client" github.com/AstromechZA/cmd-middleman/client
+    go build -i -v -o "$outputfolder/rpc-cmd-server" github.com/AstromechZA/cmd-middleman/server
 
     echo "Done"
     ls -l "$outputfolder"

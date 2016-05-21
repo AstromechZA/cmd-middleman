@@ -82,34 +82,18 @@ This is still a pretty bad idea to run unless you have VERY specific use cases.
 
 ## Docker workflow
 
-1. create a directory for the socket file/s
-
-    ```
-    $ mkdir /home/user/sockets
-    ```
-
-2. start the server
-
-    ```
-    $ ./rpc-cmd-server --socket /home/user/sockets/cmd-rpc.sock --whitelist /home/user/my-cmd-rpc-whitelist
-    ...
-    ```
-
-3. start the docker container with the socket mounted inside
-
-    ```
-    $ docker run --rm -ti -v /home/user/sockets:/sockets example-container /rpc-cmd-client --socket /sockets/cmd-rpc.sock touch /home/user/markerfile
-    ```
-
-This should result in the file `/home/user/markerfile` being created.
+A demo is available as a script in the `docker-demo` folder. It requires docker
+and the Golang linux build stuff to run. It will show how the client is able to
+execute a command on the server. Both client and server are docker containers in
+the demo.
 
 ## Building the binaries
 
 These will probably only work for unix systems, don't even try it on Windows.
 
 ```
-$ go build -o rpc-cmd-client github.com/AstromechZA/middleman/client
-$ go build -o rpc-cmd-server github.com/AstromechZA/middleman/server
+$ go build -o rpc-cmd-client github.com/AstromechZA/cmd-middleman/client
+$ go build -o rpc-cmd-server github.com/AstromechZA/cmd-middleman/server
 ```
 
 Unfortunately the golang 'rpc' library used is fairly huge when statically
