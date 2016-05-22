@@ -13,6 +13,10 @@ the results back to the client.
 Commands are checked against a whitelist file that contains a series of regular
 expressions, one of which must match the call for it to be executed.
 
+The server is able to service multiple concurrent requests from different clients,
+and since the socket file could be made available to multiple containers, one instance
+of the `rpc-cmd-server` on the host can run commands for multiple containers.
+
 ## Usage of server
 
 ```
