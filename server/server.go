@@ -96,6 +96,22 @@ func compilePatternsFromFile(path string) (*[]regexp.Regexp, error) {
     return &whitelistRegexes, nil
 }
 
+func serveListenerLoop(listener *net.UnixListener, stopped *bool) {
+    log.Println("Beginning connection loop..")
+    go func() {
+        for *stopped == false {
+            conn, err := listener.AcceptUnix()
+            if err != nil {
+                log.Fatal(err)
+            } else {
+                go func(){
+                    rpc.ServeConn(conn)
+                }()
+            }
+        }
+    }()
+}
+
 func mainInner() error {
     // command line flags
     whitelistFlag := flag.String("whitelist", "",
@@ -158,16 +174,7 @@ func mainInner() error {
     defer os.Remove(*socketFileFlag)
 
     stopped := false
-    log.Println("Beginning connection loop..")
-    go func() {
-        for stopped == false {
-            conn, err := listener.AcceptUnix()
-            if err != nil {
-                log.Fatal(err)
-            }
-            rpc.ServeConn(conn)
-        }
-    }()
+    serveListenerLoop(listener, &stopped)
 
     // instead of sitting in a for loop or something, we wait for sigint
     signalChannel := make(chan os.Signal, 1)
