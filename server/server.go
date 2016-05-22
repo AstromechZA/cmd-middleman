@@ -32,6 +32,11 @@ containing a number of regex patterns for whitelisted commands. At least one
 of these patterns MUST match a command and its arguments in order to be executed.
 `
 
+// Version is the version string
+// format should be 'X.YZ'
+// Set this at build time using the -ldflags="-X common.Version=X.YZ"
+var Version = "<unofficial build>"
+
 // MiddleManRPC is an rpc identifier whose only attribute is a list of
 // whitelisting regex patterns.
 type MiddleManRPC struct {
@@ -118,6 +123,7 @@ func mainInner() error {
         "Path to a file containing regex patterns. A regex pattern MUST match an incoming command for it to be run.")
     socketFileFlag := flag.String("socket", "",
         "Path to a unix socket file being listened to by the server.")
+    versionFlag := flag.Bool("version", false, "Print the version string")
 
     // usage string
     flag.Usage = func() {
@@ -127,6 +133,12 @@ func mainInner() error {
 
     // parse the args
     flag.Parse()
+
+    // print version if required
+    if *versionFlag {
+        fmt.Println(Version)
+        os.Exit(0)
+    }
 
     // required args
     for _, n := range []string{"whitelist", "socket"} {

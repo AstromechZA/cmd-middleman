@@ -31,9 +31,15 @@ it will exit with code 127 'Command not found.'.
 
 const rpcCall = "MiddleManRPC.RunCmd"
 
+// Version is the version string
+// format should be 'X.YZ'
+// Set this at build time using the -ldflags="-X common.Version=X.YZ"
+var Version = "<unofficial build>"
+
 func mainInner() error {
     // command line flags
     socketFileFlag := flag.String("socket", "", "Path to a unix socket file being listened to by the server.")
+    versionFlag := flag.Bool("version", false, "Print the version string")
 
     // set up the usage strings
     flag.Usage = func() {
@@ -43,6 +49,12 @@ func mainInner() error {
 
     // parse the args
     flag.Parse()
+
+    // print version if required
+    if *versionFlag {
+        fmt.Println(Version)
+        os.Exit(0)
+    }
 
     // required args
     if err := common.RequiredFlag("socket"); err != nil {
